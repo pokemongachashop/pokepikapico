@@ -11,9 +11,15 @@
 window.PIKA_FIREBASE_CONFIG = {
   apiKey: "AIzaSyDYo9StwyC18_SXAIx2In8VXOPwFspnLeI",
   authDomain: "pokepika-9052f.firebaseapp.com",
-  databaseUrl: "https://pokepika-9052f-default-rtdb.asia-southeast1.firebasedatabase.app/",
+  databaseURL: "https://pokepika-9052f-default-rtdb.asia-southeast1.firebasedatabase.app/",
   projectId: "pokepika-9052f",
-  storageBucket: "pokepika-9052f.firebasestorage.app",
-  messagingSenderId: "870330758109",
   appId: "1:870330758109:web:f7dbb3eb0cdd29ad8bbc34"
+};
+
+/* 운영진 가상 이메일 도메인
+ * 운영진 로그인 칸에 아이디만 입력하면(예: admin1) 이 도메인을 붙여
+ * admin1@pikapark.admin 으로 로그인합니다. 실제로 존재하는 메일 주소일 필요는 없어요.
+ * Firebase 콘솔에서 운영진 계정을 만들 때도 같은 형식(아이디@이 도메인)을 쓰세요. */
+window.PIKA_SETTINGS = {
+  adminEmailDomain: "pikapark.admin"
 };
