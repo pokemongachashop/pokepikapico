@@ -29,20 +29,39 @@
       </div>
 
       <div class="panel">
-        <label class="field">
-          <span>닉네임</span>
-          <input id="input-name" type="text" maxlength="12" autocomplete="off" placeholder="최대 12자">
-        </label>
-
-        <button id="btn-create" class="btn primary big hidden" disabled>방 만들기</button>
-        <p id="create-note" class="create-note">운영진에게 받은 방 코드를 입력해 참가하세요.</p>
-
-        <div class="join-row">
-          <input id="input-code" type="text" maxlength="5" autocomplete="off" placeholder="방 코드 5자리" inputmode="latin" aria-label="방 코드">
-          <button id="btn-join" class="btn" disabled>참가</button>
+        <!-- 참가자 로그인: 닉네임(디스코드 활동명) + 개인 비밀번호 -->
+        <div id="user-login">
+          <label class="field">
+            <span>닉네임 (디스코드 활동명)</span>
+            <input id="input-name" type="text" maxlength="12" autocomplete="username" placeholder="최대 12자">
+          </label>
+          <label class="field">
+            <span>개인 비밀번호</span>
+            <input id="input-pw" type="password" maxlength="32" autocomplete="current-password" placeholder="4~32자">
+          </label>
+          <button id="btn-user-login" class="btn primary big" disabled>로그인</button>
+          <p class="note">처음이면 입력한 닉네임과 비밀번호로 자동 등록돼요. 다른 기기에서도 같은 닉네임·비밀번호로 들어오면 돼요. 비밀번호를 잊으면 운영진에게 문의해 주세요.</p>
         </div>
 
-        <button id="btn-rejoin" class="btn ghost hidden">이전 방으로 돌아가기</button>
+        <!-- 로그인 후: 방 참가 / 운영진은 방 만들기 -->
+        <div id="user-ready" class="hidden">
+          <div class="who-row">
+            <img id="user-pika" alt="">
+            <span id="user-who"></span>
+            <button id="btn-user-logout" class="btn ghost small">로그아웃</button>
+          </div>
+          <label id="admin-name-row" class="field hidden">
+            <span>방에서 보일 이름</span>
+            <input id="input-admin-name" type="text" maxlength="12" autocomplete="off" placeholder="운영진">
+          </label>
+          <button id="btn-create" class="btn primary big hidden" disabled>방 만들기</button>
+          <p id="create-note" class="create-note">운영진에게 받은 방 코드를 입력해 참가하세요.</p>
+          <div class="join-row">
+            <input id="input-code" type="text" maxlength="5" autocomplete="off" placeholder="방 코드 5자리" inputmode="latin" aria-label="방 코드">
+            <button id="btn-join" class="btn" disabled>참가</button>
+          </div>
+          <button id="btn-rejoin" class="btn ghost hidden">이전 방으로 돌아가기</button>
+        </div>
       </div>
 
       <details class="panel howto">
@@ -62,9 +81,14 @@
         <span id="net-text">서버 연결 준비 중…</span>
       </footer>
 
-      <!-- 운영진 전용: 방 만들기·게임 진행 권한 -->
+      <!-- 운영진 전용: 이메일(가상)/비밀번호 로그인 -->
       <div class="admin-area">
-        <button id="btn-admin-login" class="btn ghost small" disabled>운영진 로그인</button>
+        <button id="btn-admin-toggle" class="btn ghost small" disabled>운영진 로그인</button>
+        <div id="admin-form" class="admin-form hidden">
+          <input id="input-admin-email" type="text" autocomplete="username" placeholder="운영진 아이디 또는 이메일" aria-label="운영진 아이디">
+          <input id="input-admin-pw" type="password" autocomplete="current-password" placeholder="비밀번호" aria-label="운영진 비밀번호">
+          <button id="btn-admin-login" class="btn small" disabled>운영진으로 로그인</button>
+        </div>
         <div id="admin-status" class="admin-status hidden">
           <span id="admin-who"></span>
           <div id="admin-uid-row" class="admin-uid-row hidden">
