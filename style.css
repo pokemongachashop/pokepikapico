@@ -431,3 +431,22 @@ input[type="text"]:focus { border-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   .toast { animation: none; }
 }
+
+/* 참가자 로그인 */
+input[type="password"] {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  background: #15122a;
+  border: var(--px) solid var(--line);
+  color: var(--text);
+  outline: none;
+  border-radius: 0;
+}
+input[type="password"]:focus { border-color: var(--accent); }
+.note { margin: 10px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.who-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.who-row img { width: 32px; height: 32px; image-rendering: pixelated; }
+.who-row #user-who { flex: 1; color: var(--accent); }
+.admin-form { display: grid; gap: 8px; margin-top: 10px; }
+.admin-form .btn { justify-self: start; }
