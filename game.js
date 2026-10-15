@@ -47,6 +47,8 @@ const CFG = {
   BG_PARALLAX: 0.35,
 };
 const T = CFG.T;
+// 배포 확인용 버전. 시작 화면 맨 아래에 표시되며, index.html의 game.js?v= 값과 같게 맞춘다.
+const APP_VERSION = '2026.10.15-c';
 
 // 20명 색상: 비슷한 색이 연달아 배정되지 않도록 순서를 섞어 둠
 const PALETTE = [
@@ -2648,6 +2650,9 @@ function boot() {
   $('input-admin-name').value = storageGet('pika_admin_name') || '운영진';
   const qRoom = (QS.get('room') || '').toUpperCase();
   if (CODE_RE.test(qRoom)) $('input-code').value = qRoom;
+  const ver = $('app-version');
+  if (ver) ver.textContent = 'game.js ' + APP_VERSION;
+  log('버전', APP_VERSION);
   bindUi();
   setupKeyboard();
   setupTouch();
