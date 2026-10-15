@@ -834,7 +834,7 @@ const App = {
   info: null, players: {}, game: null, slotMap: [],
   hostTimer: null, takeoverTimer: null, lastActiveAt: 0, removing: new Set(),
   stageToken: 0,
-  isAdmin: false, adminLs: null, authUser: null,
+  isAdmin: false, adminLs: null, authUser: null, profile: null,
 };
 const serverNow = () => Date.now() + App.serverOffset;
 
@@ -880,13 +880,11 @@ function initFirebase() {
 
   const persistence = TEST_MODE ? firebase.auth.Auth.Persistence.SESSION : firebase.auth.Auth.Persistence.LOCAL;
   App.auth.setPersistence(persistence).catch((e) => warn('persistence', e)).then(() => {
-    // 모바일에서 팝업이 막혀 리디렉션으로 운영진 로그인한 경우의 결과 처리
-    App.auth.getRedirectResult().catch((e) => { warn('redirect login', e && e.code); toast(friendlyError(e), true); });
     App.auth.onAuthStateChanged((user) => {
       App.authUser = user || null;
       if (user) {
         if (App.uid !== user.uid) { App.uid = user.uid; onSignedIn(); }
-        updateAdminUi();
+        updateAccountUi();
       } else {
         // 로그인 정보가 없으면(처음 방문·운영진 로그아웃) 익명 사용자로 시작
         App.uid = null;
@@ -902,59 +900,164 @@ function initFirebase() {
   return true;
 }
 
-/* ---- 운영진(관리자) ----
- * 운영진만 방을 만들고 게임을 시작·진행할 수 있다.
- * 운영진은 구글 계정으로 로그인하고, Firebase 콘솔에서 admins/{uid} = true 로 등록한다.
- * (보안 규칙이 같은 조건을 서버에서 다시 검사하므로 화면을 조작해도 권한이 생기지 않는다.)
+/* ---- 계정 ----
+ * 운영진: 이메일/비밀번호 로그인(가상 이메일). Firebase 콘솔에서 계정을 만들고 admins/{uid} = true 로 등록.
+ * 참가자: 익명 로그인 + 닉네임(디스코드 활동명) + 개인 비밀번호.
+ *   - 닉네임마다 profiles/{키}(공개: 이름)와 secrets/{키}(비공개: 비밀번호 해시)가 처음 한 번 만들어진다.
+ *   - "로그인" = claims/{내 uid}에 {키, 해시}를 쓰는 것. 보안 규칙이 secrets의 해시와 같을 때만 허용한다.
+ *     secrets는 누구도 읽을 수 없고 규칙이 서버에서 비교만 하므로 해시가 새어 나가지 않는다.
+ *   - 방에서 보이는 이름은 profiles의 이름과 같아야 해서(규칙 검사) 남의 닉네임을 사칭할 수 없다.
+ * 운영진·방 진행 권한은 화면이 아니라 보안 규칙이 최종 판단한다.
  */
+const NAME_BAD_RE = /[$#\[\]\/\\]/;
+const nameKey = (name) => name.toLowerCase().split('.').join(',');   // 규칙의 toLowerCase().replace('.', ',')와 같은 변환
+async function hashPassword(k, pw) {
+  if (!window.crypto || !crypto.subtle) throw new Error('secure-context');
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('pikapark|v1|' + k + '|' + pw));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+const isEmailUser = () => !!App.authUser && !App.authUser.isAnonymous;
+function adminEmail(input) {
+  const v = String(input || '').trim();
+  if (!v) return '';
+  if (v.includes('@')) return v;
+  const domain = (window.PIKA_SETTINGS && window.PIKA_SETTINGS.adminEmailDomain) || 'pikapark.admin';
+  return v + '@' + domain;   // 아이디만 입력하면 config.js의 가상 도메인을 붙임
+}
 function setAdmin(v) {
-  if (App.isAdmin === v) { updateAdminUi(); return; }
+  if (App.isAdmin === v) { updateAccountUi(); return; }
   App.isAdmin = v;
-  updateAdminUi();
+  updateAccountUi();
   renderLobbySoon();
   updateResultModal();
 }
 function watchAdmin() {
   if (App.adminLs) { App.adminLs.off(); App.adminLs = null; }
-  if (!App.uid) return;
+  if (!App.uid || !isEmailUser()) { setAdmin(false); return; }   // 익명 사용자는 운영진이 될 수 없음
   const ref = App.db.ref('admins/' + App.uid);
   ref.on('value', (s) => setAdmin(s.val() === true), (e) => { warn('운영진 확인 실패', e && e.code); setAdmin(false); });
   App.adminLs = ref;
 }
-const isGoogleUser = () => !!App.authUser && !App.authUser.isAnonymous;
-function updateAdminUi() {
-  const google = isGoogleUser();
+async function loadProfile() {
+  App.profile = null;
+  if (!App.uid || isEmailUser()) return;
+  try {
+    const k = (await App.db.ref(`claims/${App.uid}/k`).once('value')).val();
+    if (!k) return;
+    const name = (await App.db.ref(`profiles/${k}/name`).once('value')).val();
+    if (name) App.profile = { k, name };
+  } catch (e) { dbg('profile', e && e.code); }
+}
+// 방에서 쓸 신원 {k, name}. 운영진은 '@uid', 참가자는 닉네임 키
+function myIdentity() {
+  if (App.isAdmin) {
+    const n = sanitizeName($('input-admin-name').value) || '운영진';
+    storageSet('pika_admin_name', n);
+    return { k: '@' + App.uid, name: n };
+  }
+  return App.profile;
+}
+function updateAccountUi() {
+  const email = isEmailUser();
+  const ready = App.isAdmin || !!App.profile;
+  $('user-login').classList.toggle('hidden', ready || email);
+  $('user-ready').classList.toggle('hidden', !ready);
+  $('admin-name-row').classList.toggle('hidden', !App.isAdmin);
   $('btn-create').classList.toggle('hidden', !App.isAdmin);
   $('create-note').classList.toggle('hidden', App.isAdmin);
-  $('btn-admin-login').classList.toggle('hidden', google);
-  $('admin-status').classList.toggle('hidden', !google);
-  if (google) {
-    const who = App.authUser.email || '구글 계정';
-    $('admin-who').textContent = App.isAdmin ? `운영진으로 로그인됨 · ${who}` : `${who} · 운영진으로 등록되지 않은 계정이에요`;
+  $('btn-user-logout').classList.toggle('hidden', !App.profile || email);
+  $('user-who').textContent = App.isAdmin ? '운영진으로 로그인됨' : App.profile ? `${App.profile.name} 님` : '';
+  if (App.profile) {
+    const img = $('user-pika');
+    if (!img.src) img.src = pikaPreviewURL(0);
+  }
+  $('btn-admin-toggle').classList.toggle('hidden', email);
+  $('admin-status').classList.toggle('hidden', !email);
+  if (email) {
+    $('admin-form').classList.add('hidden');
+    const who = App.authUser.email || '이메일 계정';
+    $('admin-who').textContent = App.isAdmin ? `운영진: ${who}` : `${who} · 운영진으로 등록되지 않은 계정이에요`;
     $('admin-uid-row').classList.toggle('hidden', App.isAdmin);
     $('admin-uid').textContent = App.uid || '';
   }
   if (!App.busy) setBusy(false);
 }
-async function adminLogin() {
-  if (App.roomCode) return;
-  const provider = new firebase.auth.GoogleAuthProvider();
-  provider.setCustomParameters({ prompt: 'select_account' });
+async function userLogin() {
+  if (App.busy || !App.uid) return;
+  if (isEmailUser()) { toast('운영진 계정에서 로그아웃한 뒤 참가자로 로그인해 주세요', true); return; }
+  const name = sanitizeName($('input-name').value);
+  const pw = $('input-pw').value || '';
+  if (!name) { toast('닉네임(디스코드 활동명)을 입력해 주세요', true); $('input-name').focus(); return; }
+  if (NAME_BAD_RE.test(name)) { toast('닉네임에 $ # [ ] / \\ 기호는 쓸 수 없어요', true); return; }
+  if (pw.length < 4 || pw.length > 32) { toast('비밀번호는 4~32자로 입력해 주세요', true); $('input-pw').focus(); return; }
+  setBusy(true);
+  let ok = false;
   try {
-    await App.auth.signInWithPopup(provider);
-  } catch (e) {
-    const c = e && e.code;
-    if (c === 'auth/popup-blocked' || c === 'auth/operation-not-supported-in-this-environment') {
-      await App.auth.signInWithRedirect(provider).catch((err) => toast(friendlyError(err), true));
-    } else if (c !== 'auth/popup-closed-by-user' && c !== 'auth/cancelled-popup-request') {
-      warn('운영진 로그인 실패', c);
-      toast(c === 'auth/unauthorized-domain' ? 'Firebase 콘솔의 승인된 도메인에 이 사이트 주소를 추가해 주세요.' : friendlyError(e), true);
+    const k = nameKey(name);
+    const h = await hashPassword(k, pw);
+    const prof = await App.db.ref('profiles/' + k).once('value');
+    if (!prof.exists()) {
+      await App.db.ref().update({
+        [`profiles/${k}`]: { name, createdAt: TS() },
+        [`secrets/${k}`]: h,
+        [`claims/${App.uid}`]: { k, h, at: TS() },
+      });
+      App.profile = { k, name };
+      toast(`'${name}' 닉네임을 새로 등록했어요. 비밀번호를 꼭 기억해 주세요!`);
+    } else {
+      try {
+        await App.db.ref('claims/' + App.uid).set({ k, h, at: TS() });
+      } catch (e) {
+        if (isPermissionError(e)) { toast('비밀번호가 맞지 않아요. 잊어버렸다면 운영진에게 문의해 주세요.', true); return; }
+        throw e;
+      }
+      App.profile = { k, name: (prof.val() && prof.val().name) || name };
+      toast(`${App.profile.name} 님, 반가워요!`);
     }
+    $('input-pw').value = '';
+    storageSet('pika_name', App.profile.name);
+    ok = true;
+  } catch (e) {
+    console.error(e);
+    if (e && e.message === 'secure-context') toast('https 주소에서만 로그인할 수 있어요', true);
+    else if (isPermissionError(e)) toast('이 닉네임은 등록할 수 없어요. 잠시 후 다시 시도하거나 다른 표기를 써 주세요.', true);
+    else toast(friendlyError(e), true);
+  } finally {
+    setBusy(false);
+    updateAccountUi();
   }
+  if (ok) afterLogin();
+}
+async function userLogout() {
+  if (App.roomCode || App.busy) return;
+  try { await App.db.ref('claims/' + App.uid).remove(); } catch (e) { warn('logout', e && e.code); }
+  App.profile = null;
+  storageSet('pika_last_room', null);
+  updateAccountUi();
+  toast('로그아웃했어요');
+}
+async function adminLogin() {
+  if (App.roomCode || App.busy) return;
+  const email = adminEmail($('input-admin-email').value);
+  const pw = $('input-admin-pw').value || '';
+  if (!email || !pw) { toast('운영진 아이디(이메일)와 비밀번호를 입력해 주세요', true); return; }
+  setBusy(true);
+  try {
+    await App.auth.signInWithEmailAndPassword(email, pw);
+    $('input-admin-pw').value = '';
+    toast('운영진 계정으로 로그인했어요');
+  } catch (e) {
+    const c = String((e && e.code) || '');
+    warn('운영진 로그인 실패', c);
+    toast(/invalid-credential|wrong-password|user-not-found|invalid-email|invalid-login/.test(c) ? '아이디(이메일) 또는 비밀번호가 맞지 않아요'
+      : c === 'auth/too-many-requests' ? '시도가 너무 많아요. 잠시 후 다시 해 주세요.'
+      : c === 'auth/operation-not-allowed' ? 'Firebase 콘솔에서 이메일/비밀번호 로그인을 사용 설정해 주세요.'
+      : friendlyError(e), true);
+  } finally { setBusy(false); }
 }
 async function adminLogout() {
-  if (App.roomCode) return;
-  try { await App.auth.signOut(); toast('운영진 로그아웃했어요'); } catch (e) { toast(friendlyError(e), true); }
+  if (App.roomCode || App.busy) return;
+  try { await App.auth.signOut(); toast('운영진 계정에서 로그아웃했어요'); } catch (e) { toast(friendlyError(e), true); }
 }
 
 function onConnectedChange(c) {
@@ -972,10 +1075,24 @@ function onConnectedChange(c) {
 }
 
 async function onSignedIn() {
-  log('로그인 완료', App.uid.slice(0, 6) + '…', isGoogleUser() ? '(구글 계정)' : '(익명)', TEST_MODE ? '(테스트 모드)' : '');
+  log('로그인 완료', App.uid.slice(0, 6) + '…', isEmailUser() ? '(이메일 계정)' : '(익명)', TEST_MODE ? '(테스트 모드)' : '');
   $('btn-rejoin').classList.add('hidden');
+  const uid = App.uid;
   watchAdmin();
-  setBusy(false);
+  await loadProfile();
+  if (uid !== App.uid) return;
+  updateAccountUi();
+  if (BOT_MODE && QS.get('room') && !App.profile && !isEmailUser()) {
+    // 부하 테스트용 봇: 임의 닉네임으로 자동 등록 후 참가
+    $('input-name').value = 'BOT' + randomId(4).toUpperCase();
+    $('input-pw').value = randomId(12);
+    await userLogin();
+    return;
+  }
+  afterLogin();
+}
+async function afterLogin() {
+  if (App.roomCode) return;
   // 새로고침 직후라면 이전 방으로 자동 복귀
   const last = storageGet('pika_last_room');
   const lastAt = +storageGet('pika_last_room_at') || 0;
@@ -992,15 +1109,10 @@ async function onSignedIn() {
         b.textContent = `이전 방(${last})으로 돌아가기`;
         b.classList.remove('hidden');
         b.onclick = () => rejoinRoom(last);
-      } else {
-        storageSet('pika_last_room', null);
       }
     } catch (e) { dbg('rejoin check', e); }
   }
-  if (BOT_MODE && QS.get('room')) {
-    if (!$('input-name').value) $('input-name').value = 'BOT' + randomId(3).toUpperCase();
-    joinRoom(String(QS.get('room')).toUpperCase());
-  }
+  if (BOT_MODE && QS.get('room') && myIdentity()) joinRoom(String(QS.get('room')).toUpperCase());
 }
 
 async function setupPresence() {
@@ -1026,17 +1138,13 @@ function onListenError(err, name) {
 /* -----------------------------------------------------------------
  * 9. 방 만들기 · 참가 · 나가기
  * ----------------------------------------------------------------- */
-function getName() {
-  const n = sanitizeName($('input-name').value);
-  if (!n) { toast('닉네임을 입력해 주세요', true); $('input-name').focus(); return null; }
-  storageSet('pika_name', n);
-  App.name = n;
-  return n;
-}
 function setBusy(b) {
   App.busy = b;
-  for (const id of ['btn-join', 'btn-rejoin', 'btn-admin-login', 'btn-admin-logout']) $(id).disabled = b || !App.uid;
+  for (const id of ['btn-join', 'btn-rejoin', 'btn-user-login', 'btn-user-logout', 'btn-admin-toggle', 'btn-admin-login', 'btn-admin-logout']) $(id).disabled = b || !App.uid;
   $('btn-create').disabled = b || !App.uid || !App.isAdmin;
+}
+function playerRecord(me, slot) {
+  return { name: me.name, k: me.k, slot: String(slot), joinedAt: TS(), online: true, seen: TS(), tab: App.tabId };
 }
 
 async function sweepStaleRooms() {
@@ -1055,8 +1163,7 @@ async function sweepStaleRooms() {
 async function createRoom() {
   if (App.busy || !App.uid) return;
   if (!App.isAdmin) { toast('방 만들기는 운영진만 할 수 있어요. 받은 방 코드로 참가해 주세요.', true); return; }
-  const name = getName();
-  if (!name) return;
+  const me = myIdentity();
   setBusy(true);
   try {
     await sweepStaleRooms();
@@ -1067,18 +1174,19 @@ async function createRoom() {
       updates[`rooms/${code}/info`] = { host: App.uid, createdAt: TS(), lastActive: TS() };
       updates[`rooms/${code}/game`] = { status: 'lobby', stage: 0, seq: 0, sk: 's0' };
       updates[`rooms/${code}/slots/0`] = App.uid;
-      updates[`rooms/${code}/players/${App.uid}`] = { name, slot: '0', joinedAt: TS(), online: true, seen: TS(), tab: App.tabId };
+      updates[`rooms/${code}/players/${App.uid}`] = playerRecord(me, 0);
+      updates[`rooms/${code}/who/${me.k}`] = { u: App.uid, s: '0' };
       try {
         await App.db.ref().update(updates);
         log('방 생성', code);
         await enterRoom(code);
         return;
       } catch (e) {
-        if (isPermissionError(e)) { dbg('코드 충돌, 재시도', code); continue; }
+        if (isPermissionError(e)) { dbg('코드 충돌 또는 권한 없음, 재시도', code); continue; }
         throw e;
       }
     }
-    toast('방을 만들지 못했어요. 잠시 후 다시 시도해 주세요.', true);
+    toast('방을 만들지 못했어요. 운영진 등록(admins)과 보안 규칙을 확인해 주세요.', true);
   } catch (e) {
     console.error(e);
     toast(friendlyError(e), true);
@@ -1089,25 +1197,48 @@ async function joinRoom(codeArg) {
   if (App.busy || !App.uid) return;
   const code = String(codeArg || $('input-code').value || '').trim().toUpperCase();
   if (!CODE_RE.test(code)) { toast('방 코드는 5자리 영문/숫자예요', true); return; }
-  const name = getName();
-  if (!name) return;
+  const me = myIdentity();
+  if (!me) { toast('먼저 닉네임과 비밀번호로 로그인해 주세요', true); return; }
   setBusy(true);
   try {
     const base = App.db.ref('rooms/' + code);
     const infoSnap = await base.child('info').once('value');
     if (!infoSnap.exists()) { toast('그런 방을 찾을 수 없어요. 코드를 확인해 주세요.', true); return; }
     const meSnap = await base.child('players/' + App.uid).once('value');
-    if (meSnap.exists()) { await base.child('players/' + App.uid).update({ name }); await enterRoom(code); return; }
-    const gameSnap = await base.child('game').once('value');
-    const g = gameSnap.val();
+    if (meSnap.exists()) {
+      if (App.isAdmin) await base.child('players/' + App.uid).update({ name: me.name });
+      await enterRoom(code);
+      return;
+    }
+    // 같은 닉네임이 다른 기기·브라우저로 이미 방에 있으면 그 자리를 이어받음(중복 참가 방지)
+    const w = (await base.child('who/' + me.k).once('value')).val();
+    if (w && w.u && w.u !== App.uid && w.s != null) {
+      const upd = {};
+      upd[`rooms/${code}/players/${w.u}`] = null;
+      upd[`rooms/${code}/pos/${w.u}`] = null;
+      upd[`rooms/${code}/slots/${w.s}`] = App.uid;
+      upd[`rooms/${code}/players/${App.uid}`] = playerRecord(me, w.s);
+      upd[`rooms/${code}/who/${me.k}`] = { u: App.uid, s: String(w.s) };
+      try {
+        await App.db.ref().update(upd);
+        log('다른 기기의 자리 이어받음', code, '슬롯', w.s);
+        toast('다른 기기에서 쓰던 자리를 이어받았어요');
+        await enterRoom(code);
+        return;
+      } catch (e) {
+        if (!isPermissionError(e)) throw e;
+        dbg('이어받기 실패 → 새로 참가 시도');
+      }
+    }
+    const g = (await base.child('game').once('value')).val();
     if (g && g.status !== 'lobby') { toast('게임이 진행 중인 방이에요. 운영진이 대기실로 돌아오면 참가할 수 있어요.', true); return; }
-    const slotsSnap = await base.child('slots').once('value');
-    const used = slotsSnap.val() || {};
+    const used = (await base.child('slots').once('value')).val() || {};
     for (let i = 0; i < CFG.MAX_PLAYERS; i++) {
       if (used[i]) continue;
       const upd = {};
       upd[`rooms/${code}/slots/${i}`] = App.uid;
-      upd[`rooms/${code}/players/${App.uid}`] = { name, slot: String(i), joinedAt: TS(), online: true, seen: TS(), tab: App.tabId };
+      upd[`rooms/${code}/players/${App.uid}`] = playerRecord(me, i);
+      upd[`rooms/${code}/who/${me.k}`] = { u: App.uid, s: String(i) };
       try {
         await App.db.ref().update(upd);
         log('방 참가', code, '슬롯', i);
@@ -1228,6 +1359,7 @@ async function leaveRoom(opts) {
         if (wasHost && onlineOthers.length) await App.db.ref(`rooms/${code}/info/host`).set(onlineOthers[0][0]);
         const upd = { [`rooms/${code}/players/${uid}`]: null, [`rooms/${code}/pos/${uid}`]: null };
         if (me && me.slot != null) upd[`rooms/${code}/slots/${me.slot}`] = null;
+        if (me && me.k) upd[`rooms/${code}/who/${me.k}`] = null;
         await App.db.ref().update(upd);
       }
     } catch (e) { warn('나가기 처리 중 오류', e && e.code); }
@@ -1255,7 +1387,7 @@ function onKicked() {
   storageSet('pika_last_room', null);
   App.leaving = false;
   showScreen('title');
-  toast('방에서 나가게 됐어요. 오래 연결이 끊겼거나 방이 정리됐을 수 있어요.', true);
+  toast('방에서 나가게 됐어요. 같은 닉네임으로 다른 기기에서 들어왔거나, 오래 연결이 끊겼을 수 있어요.', true);
 }
 function onRoomGone() {
   if (App.leaving || !App.roomCode) return;
@@ -1304,6 +1436,7 @@ function hostTick() {
       App.removing.add(uid);
       const upd = { [`rooms/${code}/players/${uid}`]: null, [`rooms/${code}/pos/${uid}`]: null };
       if (p.slot != null) upd[`rooms/${code}/slots/${p.slot}`] = null;
+      if (p.k) upd[`rooms/${code}/who/${p.k}`] = null;
       App.db.ref().update(upd)
         .then(() => log('끊긴 플레이어 정리:', p.name))
         .catch(netErr('cleanup'))
@@ -2416,6 +2549,13 @@ function debugStats() {
  * ----------------------------------------------------------------- */
 function bindUi() {
   $('btn-create').onclick = createRoom;
+  $('btn-user-login').onclick = userLogin;
+  $('btn-user-logout').onclick = userLogout;
+  $('btn-admin-toggle').onclick = () => {
+    const f = $('admin-form');
+    f.classList.toggle('hidden');
+    if (!f.classList.contains('hidden')) $('input-admin-email').focus();
+  };
   $('btn-admin-login').onclick = adminLogin;
   $('btn-admin-logout').onclick = adminLogout;
   $('btn-copy-uid').onclick = async () => {
@@ -2427,7 +2567,10 @@ function bindUi() {
     e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
   });
   $('input-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(); });
-  $('input-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') { if ($('input-code').value) joinRoom(); else createRoom(); } });
+  $('input-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('input-pw').focus(); });
+  $('input-pw').addEventListener('keydown', (e) => { if (e.key === 'Enter') userLogin(); });
+  $('input-admin-email').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('input-admin-pw').focus(); });
+  $('input-admin-pw').addEventListener('keydown', (e) => { if (e.key === 'Enter') adminLogin(); });
   $('btn-copy').onclick = async () => {
     const code = App.roomCode || '';
     try { await navigator.clipboard.writeText(code); toast('방 코드를 복사했어요: ' + code); }
@@ -2455,6 +2598,7 @@ function boot() {
   const logo = $('logo-pika');
   if (logo) { const g = logo.getContext('2d'); g.imageSmoothingEnabled = false; g.drawImage(drawPika(0, 'clear', 3), 0, 0); }
   $('input-name').value = storageGet('pika_name') || '';
+  $('input-admin-name').value = storageGet('pika_admin_name') || '운영진';
   const qRoom = (QS.get('room') || '').toUpperCase();
   if (CODE_RE.test(qRoom)) $('input-code').value = qRoom;
   bindUi();
