@@ -9,11 +9,13 @@
  * 데이터 보호는 database.rules.json 보안 규칙이 담당합니다.
  * ========================================================= */
 window.PIKA_FIREBASE_CONFIG = {
-  apiKey: "AIzaSyDYo9StwyC18_SXAIx2In8VXOPwFspnLeI",
-  authDomain: "pokepika-9052f.firebaseapp.com",
-  databaseURL: "https://pokepika-9052f-default-rtdb.asia-southeast1.firebasedatabase.app/",
-  projectId: "pokepika-9052f",
-  appId: "1:870330758109:web:f7dbb3eb0cdd29ad8bbc34"
+  apiKey: "AIzaSyDkezDtK3mn3LaIuDZmJQ3y_gIwuhPLURU",
+  authDomain: "pokeevent4444.firebaseapp.com",
+  databaseURL: "https://pokeevent4444-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "pokeevent4444",
+  storageBucket: "pokeevent4444.firebasestorage.app",
+  messagingSenderId: "41134232095",
+  appId: "1:41134232095:web:40a80271fb491983f6fb2a"
 };
 
 /* 운영진 가상 이메일 도메인
