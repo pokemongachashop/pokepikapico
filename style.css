@@ -450,3 +450,5 @@ input[type="password"]:focus { border-color: var(--accent); }
 .who-row #user-who { flex: 1; color: var(--accent); }
 .admin-form { display: grid; gap: 8px; margin-top: 10px; }
 .admin-form .btn { justify-self: start; }
+
+.app-version { margin-top: 14px; font-size: 11px; color: #6f6a94; text-align: right; }
