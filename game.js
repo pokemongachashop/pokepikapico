@@ -48,7 +48,7 @@ const CFG = {
 };
 const T = CFG.T;
 // 배포 확인용 버전. 시작 화면 맨 아래에 표시되며, index.html의 game.js?v= 값과 같게 맞춘다.
-const APP_VERSION = '2026.10.15-c';
+const APP_VERSION = '2026.10.15-d';
 
 // 20명 색상: 비슷한 색이 연달아 배정되지 않도록 순서를 섞어 둠
 const PALETTE = [
@@ -861,7 +861,14 @@ const playLs = new ListenerGroup('play');
 const puzzleLs = new ListenerGroup('puzzle');
 
 function initFirebase() {
-  const cfg = window.PIKA_FIREBASE_CONFIG || {};
+  // 복사·붙여넣기 중 섞인 앞뒤 공백, 줄바꿈, 보이지 않는 문자를 제거
+  const raw = window.PIKA_FIREBASE_CONFIG || {};
+  const cfg = {};
+  for (const [k, v] of Object.entries(raw)) {
+    cfg[k] = typeof v === 'string' ? v.replace(/[\s\u200B-\u200D\uFEFF\u00A0]/g, '') : v;
+    if (typeof v === 'string' && cfg[k] !== v) warn(`config.js의 ${k} 값에 공백/보이지 않는 문자가 있어 제거했어요`);
+  }
+  App.cfg = cfg;
   const bad = !cfg.apiKey || !cfg.databaseURL || /YOUR_/.test(JSON.stringify(cfg));
   if (bad) {
     $('config-error').classList.remove('hidden');
@@ -1080,7 +1087,14 @@ function authProblemText(e) {
   if (!e) return ['로그인이 응답하지 않아요', '인터넷 연결을 확인하고 새로고침해 주세요. 계속되면 아래 원인 중 하나일 수 있어요: config.js의 apiKey·authDomain이 다른 프로젝트 값임, Google Cloud에서 API 키에 웹사이트 제한을 걸어 둠, 카카오톡·디스코드 같은 앱 안 브라우저에서 접속함(크롬/삼성 인터넷으로 열어 보세요).'];
   if (c === 'auth/admin-restricted-operation') return ['새 사용자 생성이 막혀 있어요', 'Firebase 콘솔 > Authentication > 설정 > 사용자 작업에서 "생성(가입) 사용 설정"을 켜 주세요. 이 옵션이 꺼져 있으면 익명 로그인도 함께 막혀요. (켜도 운영진 권한은 admins 등록 계정만 가지므로 안전해요.)'];
   if (c === 'auth/operation-not-allowed') return ['익명 로그인이 꺼져 있어요', 'Firebase 콘솔 > Authentication > 로그인 방법에서 "익명"을 사용 설정해 주세요. 방금 켰다면 1~2분 뒤 새로고침해 주세요.'];
-  if (/api-key-not-valid|invalid-api-key/.test(c)) return ['API 키가 맞지 않아요', 'config.js의 apiKey를 Firebase 콘솔 > 프로젝트 설정 > 내 앱의 값과 똑같이 넣어 주세요.'];
+  if (/api-key-not-valid|invalid-api-key/.test(c)) {
+    const key = String((App.cfg && App.cfg.apiKey) || '');
+    const looks = /^AIza[0-9A-Za-z_-]{35}$/.test(key);
+    return ['API 키가 맞지 않아요',
+      `지금 config.js의 apiKey: ${key.slice(0, 8)}…${key.slice(-4)} (${key.length}자). ` +
+      (looks ? '형식은 맞지만 Firebase가 이 키를 거절했어요. 콘솔 > 프로젝트 설정 > 내 앱(웹)의 apiKey와 앞 8자·끝 4자가 같은지, 같은 프로젝트의 값인지(databaseURL과 projectId도 같은 프로젝트인지) 확인해 주세요.'
+             : '올바른 키는 AIza로 시작하는 39자예요. 글자가 빠졌거나 0/O, 1/l/I를 잘못 옮겼을 수 있어요. 콘솔 > 프로젝트 설정 > 내 앱(웹)의 값을 그대로 복사해 붙여 넣어 주세요.')];
+  }
   if (/requests-from-referer|unauthorized-domain|app-not-authorized/.test(c)) return ['이 사이트 주소가 허용되지 않았어요', 'Firebase 콘솔 > Authentication > 설정 > 승인된 도메인에 이 사이트 주소(예: 내아이디.github.io)를 추가하고, Google Cloud 콘솔에서 API 키에 웹사이트 제한을 걸었다면 이 주소를 허용해 주세요.'];
   if (/network-request-failed/.test(c)) return ['로그인 서버에 연결하지 못했어요', '인터넷 연결을 확인하고 새로고침해 주세요. 앱 안 브라우저라면 크롬/삼성 인터넷으로 열어 보세요.'];
   if (/too-many-requests|quota/.test(c)) return ['잠시 로그인이 제한됐어요', '같은 네트워크에서 로그인 시도가 너무 많았어요. 잠시 후 다시 시도해 주세요.'];
