@@ -11,6 +11,7 @@
 window.PIKA_FIREBASE_CONFIG = {
   apiKey: "AIzaSyDYo9StwyC18_SXAIx2In8VXOPwFspnLeI",
   authDomain: "pokepika-9052f.firebaseapp.com",
+  databaseUrl: "https://pokepika-9052f-default-rtdb.asia-southeast1.firebasedatabase.app/",
   projectId: "pokepika-9052f",
   storageBucket: "pokepika-9052f.firebasestorage.app",
   messagingSenderId: "870330758109",
