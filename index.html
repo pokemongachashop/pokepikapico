@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#1b1830">
+  <title>Pika Park · 피카파크</title>
+  <!-- 한글 픽셀 폰트 (Galmuri, SIL OFL) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/galmuri@2.40.3/dist/galmuri.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ===================== 시작 화면 ===================== -->
+  <section id="screen-title" class="screen active" aria-label="시작 화면">
+    <div class="title-wrap">
+      <header class="logo">
+        <canvas id="logo-pika" width="48" height="48" aria-hidden="true"></canvas>
+        <div>
+          <h1>PIKA PARK</h1>
+          <p class="sub">피카파크 · 다 같이 건너는 협동 퍼즐</p>
+        </div>
+      </header>
+
+      <div id="config-error" class="panel warn hidden" role="alert">
+        <strong>Firebase 설정이 필요해요</strong>
+        <p><code>config.js</code> 파일의 값을 내 Firebase 프로젝트 값으로 바꿔 주세요. 파일이 업로드되지 않았거나 이름이 다르면 이 안내가 보여요. 자세한 방법은 README를 확인하세요.</p>
+      </div>
+
+      <div class="panel">
+        <label class="field">
+          <span>닉네임</span>
+          <input id="input-name" type="text" maxlength="12" autocomplete="off" placeholder="최대 12자">
+        </label>
+
+        <button id="btn-create" class="btn primary big hidden" disabled>방 만들기</button>
+        <p id="create-note" class="create-note">운영진에게 받은 방 코드를 입력해 참가하세요.</p>
+
+        <div class="join-row">
+          <input id="input-code" type="text" maxlength="5" autocomplete="off" placeholder="방 코드 5자리" inputmode="latin" aria-label="방 코드">
+          <button id="btn-join" class="btn" disabled>참가</button>
+        </div>
+
+        <button id="btn-rejoin" class="btn ghost hidden">이전 방으로 돌아가기</button>
+      </div>
+
+      <details class="panel howto">
+        <summary>조작 방법</summary>
+        <ul>
+          <li><b>PC</b> 방향키 또는 A/D 이동 · 스페이스(또는 W/↑) 점프</li>
+          <li><b>모바일</b> 화면 아래 ◀ ▶ 버튼으로 이동 · 점프 버튼</li>
+          <li>점프 버튼을 길게 누를수록 높이 뛰어요</li>
+          <li>친구 머리 위에 올라갈 수 있어요. 탑을 쌓아 높은 곳에 가 보세요</li>
+          <li>열쇠를 든 사람이 문에 닿으면 출구가 열리고, <b>모두</b> 출구에 들어가면 클리어!</li>
+          <li>출구 안에서 점프하면 다시 나올 수 있어요</li>
+        </ul>
+      </details>
+
+      <footer class="status-line">
+        <span id="net-dot" class="dot off"></span>
+        <span id="net-text">서버 연결 준비 중…</span>
+      </footer>
+
+      <!-- 운영진 전용: 방 만들기·게임 진행 권한 -->
+      <div class="admin-area">
+        <button id="btn-admin-login" class="btn ghost small" disabled>운영진 로그인</button>
+        <div id="admin-status" class="admin-status hidden">
+          <span id="admin-who"></span>
+          <div id="admin-uid-row" class="admin-uid-row hidden">
+            <span>내 ID: <code id="admin-uid"></code></span>
+            <button id="btn-copy-uid" class="btn small">ID 복사</button>
+            <p>이 ID를 Firebase 콘솔의 <code>admins</code>에 등록하면 운영진이 돼요. (README 3장)</p>
+          </div>
+          <button id="btn-admin-logout" class="btn ghost small">로그아웃</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 대기실 ===================== -->
+  <section id="screen-lobby" class="screen" aria-label="대기실">
+    <div class="lobby-wrap">
+      <div class="lobby-head panel">
+        <div>
+          <div class="label">방 코드</div>
+          <div class="code-row">
+            <span id="lobby-code" class="room-code">-----</span>
+            <button id="btn-copy" class="btn small">복사</button>
+          </div>
+        </div>
+        <div class="count-box">
+          <div class="label">참가자</div>
+          <div><span id="lobby-count">0</span> / 20</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <ul id="player-list" class="player-list" aria-live="polite"></ul>
+      </div>
+
+      <p id="lobby-msg" class="lobby-msg">방장이 게임을 시작할 때까지 기다려 주세요.</p>
+
+      <div class="lobby-actions">
+        <button id="btn-start" class="btn primary big hidden" disabled>게임 시작</button>
+        <button id="btn-leave" class="btn ghost">나가기</button>
+      </div>
+
+      <footer class="status-line">
+        <span id="net-dot-2" class="dot off"></span>
+        <span id="net-text-2">연결 확인 중…</span>
+      </footer>
+    </div>
+  </section>
+
+  <!-- ===================== 게임 화면 ===================== -->
+  <section id="screen-game" class="screen" aria-label="게임">
+    <div id="game-wrap">
+      <div id="game-root"></div>
+
+      <div id="hud">
+        <div class="hud-left">
+          <div id="hud-stage" class="hud-chip">STAGE 1</div>
+          <div id="hud-goal" class="hud-goal"></div>
+        </div>
+        <div class="hud-right">
+          <div id="hud-info" class="hud-chip"></div>
+          <span id="hud-net" class="dot on" title="연결 상태"></span>
+          <button id="btn-menu" class="btn small" aria-label="메뉴">메뉴</button>
+        </div>
+      </div>
+
+      <div id="countdown" class="countdown hidden"></div>
+      <div id="spectate-tip" class="spectate-tip hidden">출구 안에서 기다리는 중 · ◀ ▶ 관전 대상 변경 · 점프로 다시 나가기</div>
+      <div id="rotate-tip" class="rotate-tip hidden">가로로 돌리면 화면이 더 커져요</div>
+
+      <div id="touch-controls" class="hidden" aria-hidden="true">
+        <div class="pad-left">
+          <button class="tbtn" data-act="left" aria-label="왼쪽">◀</button>
+          <button class="tbtn" data-act="right" aria-label="오른쪽">▶</button>
+        </div>
+        <div class="pad-right">
+          <button class="tbtn jump" data-act="jump" aria-label="점프">점프</button>
+        </div>
+      </div>
+
+      <!-- 스테이지 결과 -->
+      <div id="result-modal" class="modal hidden" role="dialog" aria-modal="true">
+        <div class="modal-box">
+          <h2 id="result-title">STAGE CLEAR!</h2>
+          <div id="result-body"></div>
+          <div id="result-actions" class="modal-actions"></div>
+        </div>
+      </div>
+
+      <!-- 게임 메뉴 -->
+      <div id="menu-modal" class="modal hidden" role="dialog" aria-modal="true">
+        <div class="modal-box">
+          <h2>메뉴</h2>
+          <div id="menu-actions" class="modal-actions vertical"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 공용 -->
+  <div id="toast-area" aria-live="assertive"></div>
+  <div id="confirm-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-box">
+      <p id="confirm-text"></p>
+      <div class="modal-actions">
+        <button id="confirm-no" class="btn ghost">취소</button>
+        <button id="confirm-yes" class="btn primary">확인</button>
+      </div>
+    </div>
+  </div>
+  <div id="fatal" class="fatal hidden" role="alert"></div>
+</div>
+
+<!-- Firebase 설정값은 config.js에만 넣습니다 (game.js를 바꿔도 다시 입력할 필요 없음) -->
+<script src="config.js"></script>
+
+<!-- 게임 엔진: Phaser 3.90.0 (MIT) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.90.0/phaser.min.js"></script>
+<!-- Firebase JS SDK 12.19.0 (compat 빌드: 전역 firebase 객체 사용) -->
+<script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-database-compat.js"></script>
+
+<script src="game.js"></script>
+</body>
+</html>
